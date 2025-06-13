@@ -1,5 +1,7 @@
 "use client";
+
 import React, { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Label } from "../components/ui/label";
 import { Input } from "../components/ui/input";
 import { cn } from "@/lib/utils";
@@ -8,12 +10,27 @@ import { StateDistrictForm } from "./statedistrictform";
 import Webcam from "react-webcam";
 
 export default function SignupForm() {
+  const router = useRouter();
   const { user } = useUser();
   const isAuthenticated = !!user?.email;
+  const webcamRef = useRef<Webcam>(null);
+
   const [authEmail, setAuthEmail] = useState("");
   const [showWebcam, setShowWebcam] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const webcamRef = useRef<Webcam>(null);
+
+  const [formData, setFormData] = useState({
+    voterId: "",
+    firstName: "",
+    middleName: "",
+    lastName: "",
+    email: "",
+    dob: "",
+    state: "",
+    district: "",
+    phone: "",
+    aadhaar: null as File | null,
+  });
 
   useEffect(() => {
     if (isAuthenticated && user?.email) {
@@ -24,21 +41,51 @@ export default function SignupForm() {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const form = e.currentTarget;
-    const enteredEmail = (form.elements.namedItem("email") as HTMLInputElement).value;
 
     if (!isAuthenticated) {
       alert("❗ Please authenticate using Civic first.");
       return;
     }
 
-    if (enteredEmail !== authEmail) {
+    if (formData.email !== authEmail) {
       alert("❗ Entered email does not match authenticated Civic email.");
       return;
     }
 
     console.log("✅ Emails match. Opening webcam...");
-    setShowWebcam(true); // 🎯 Show webcam after email match
+    setShowWebcam(true);
+  };
+
+  const submitToDatabase = async (faceVerified: boolean) => {
+    try {
+      const payload = {
+        voterId: formData.voterId,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        state: formData.state,
+        district: formData.district,
+        faceVerified,
+      };
+
+      const response = await fetch("/api/submit-voter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        console.log("✅ Submitted to DB:", result);
+        router.push("/panel");
+      } else {
+        console.error("❌ Failed:", result.message);
+        alert(`Failed to submit: ${result.message}`);
+      }
+    } catch (err) {
+      console.error("❌ Network error:", err);
+      alert("❌ Network or server error. Please try again.");
+    }
   };
 
   const capturePhoto = () => {
@@ -47,8 +94,13 @@ export default function SignupForm() {
       setCapturedImage(imageSrc);
       setShowWebcam(false);
       console.log("📸 Captured Image:", imageSrc);
-      // Proceed to face matching / backend logic
+      submitToDatabase(true);
     }
+  };
+
+  const skipPhoto = () => {
+    console.log("⏭️ Skipping photo capture...");
+    submitToDatabase(false);
   };
 
   return (
@@ -58,69 +110,126 @@ export default function SignupForm() {
         DigiVoter lets you vote safely from home using your Voter ID and face scan.
       </p>
 
-      {/* 📸 Webcam Section */}
-      {showWebcam && (
+      {showWebcam ? (
         <div className="flex flex-col items-center mt-6">
           <Webcam
             ref={webcamRef}
             audio={false}
             screenshotFormat="image/jpeg"
-            className="rounded-lg w-full"
+            videoConstraints={{ width: 400, height: 300, facingMode: "user" }}
+            onUserMedia={() => console.log("📷 Webcam ready")}
+            onUserMediaError={(err) => console.error("🚨 Webcam error:", err)}
+            style={{ width: "100%", borderRadius: "8px", objectFit: "cover" }}
           />
-          <button
-            onClick={capturePhoto}
-            className="mt-4 rounded-md bg-green-600 px-4 py-2 text-white hover:bg-green-700"
-          >
-            Capture Photo
-          </button>
+          <div className="flex gap-4 mt-4">
+            <button
+              onClick={capturePhoto}
+              className="rounded-md bg-green-600 px-4 py-2 text-white hover:bg-green-700"
+            >
+              Capture Photo
+            </button>
+            <button
+              onClick={skipPhoto}
+              className="rounded-md bg-gray-500 px-4 py-2 text-white hover:bg-gray-600"
+            >
+              Skip
+            </button>
+          </div>
         </div>
-      )}
-
-      {/* ✅ Form Section */}
-      {!showWebcam && (
+      ) : (
         <form className="my-8" onSubmit={handleSubmit}>
           <LabelInputContainer className="mb-4">
-            <Label htmlFor="VoterID">Voter ID</Label>
-            <Input id="voterid" placeholder="Enter Your Voter ID" type="text" />
+            <Label htmlFor="voterid">Voter ID</Label>
+            <Input
+              id="voterid"
+              type="text"
+              required
+              value={formData.voterId}
+              onChange={(e) => setFormData({ ...formData, voterId: e.target.value })}
+            />
           </LabelInputContainer>
 
           <div className="mb-4 flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-2">
             <LabelInputContainer>
               <Label htmlFor="firstname">First name</Label>
-              <Input id="firstname" placeholder="First Name" type="text" />
+              <Input
+                id="firstname"
+                type="text"
+                required
+                value={formData.firstName}
+                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+              />
             </LabelInputContainer>
             <LabelInputContainer>
               <Label htmlFor="middlename">Middle name</Label>
-              <Input id="middlename" placeholder="Middle Name" type="text" />
+              <Input
+                id="middlename"
+                type="text"
+                value={formData.middleName}
+                onChange={(e) => setFormData({ ...formData, middleName: e.target.value })}
+              />
             </LabelInputContainer>
             <LabelInputContainer>
               <Label htmlFor="lastname">Last name</Label>
-              <Input id="lastname" placeholder="Last Name" type="text" />
+              <Input
+                id="lastname"
+                type="text"
+                required
+                value={formData.lastName}
+                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+              />
             </LabelInputContainer>
           </div>
 
           <LabelInputContainer className="mb-4">
             <Label htmlFor="email">Email Address</Label>
-            <Input id="email" placeholder="Enter Your EmailID" type="email" />
+            <Input
+              id="email"
+              type="email"
+              required
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            />
           </LabelInputContainer>
 
           <LabelInputContainer className="mb-4">
             <Label htmlFor="dob">Date of Birth</Label>
-            <Input id="dob" type="date" placeholder="DD/MM/YYYY" />
+            <Input
+              id="dob"
+              type="date"
+              required
+              value={formData.dob}
+              onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+            />
           </LabelInputContainer>
 
           <LabelInputContainer className="mb-4">
-            <StateDistrictForm />
+            <StateDistrictForm
+              onStateChange={(state) => setFormData({ ...formData, state })}
+              onDistrictChange={(district) => setFormData({ ...formData, district })}
+            />
           </LabelInputContainer>
 
           <LabelInputContainer className="mb-8">
             <Label htmlFor="phone">Phone Number</Label>
-            <Input id="phone" placeholder="+91 98765 43210" type="tel" />
+            <Input
+              id="phone"
+              type="tel"
+              required
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            />
           </LabelInputContainer>
 
           <LabelInputContainer className="mb-4">
             <Label htmlFor="aadhaar">Upload Aadhaar Card</Label>
-            <Input id="aadhaar" type="file" accept="image/*,application/pdf" />
+            <Input
+              id="aadhaar"
+              type="file"
+              accept="image/*,application/pdf"
+              required
+              onChange={(e) => setFormData({ ...formData, aadhaar: e.target.files?.[0] || null })}
+            />
           </LabelInputContainer>
 
           <div className="mb-8">
@@ -133,12 +242,9 @@ export default function SignupForm() {
           >
             Submit
           </button>
-
-          <div className="my-8 h-[1px] w-full bg-gradient-to-r from-transparent via-neutral-300 to-transparent dark:via-neutral-700" />
         </form>
       )}
 
-      {/* Preview of Captured Photo */}
       {capturedImage && (
         <div className="mt-4">
           <p className="text-green-600">✅ Photo captured successfully</p>
@@ -149,7 +255,6 @@ export default function SignupForm() {
   );
 }
 
-// Reusable Label-Input wrapper
 const LabelInputContainer = ({
   children,
   className,
